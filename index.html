@@ -5131,13 +5131,13 @@ body .c-workspace-header .btn:disabled {opacity:.45;box-shadow:none;cursor:defau
 .c-workspace-header :is(button,select):focus-visible {outline:3px solid #fa4b9b;outline-offset:3px}
 body #cpractice.code-focus > .card > :is(#practiceTitle,#practiceTask) {display:none}
 body #cpractice.code-focus .c-task-bank {display:none}
-body #cpractice.code-focus.show-task-bank .c-task-bank {display:block}
 body #cpractice.code-focus #cOpenWorkspace {display:none}
 body #cpractice.code-focus .task-spec {margin:0 0 16px;padding:12px 15px}
 body #cpractice.code-focus .task-spec h3 {font-size:17px}
-body #cpractice.code-focus .guidegrid {grid-template-columns:minmax(0,1.08fr) minmax(0,1fr);gap:20px;align-items:start}
+body #cpractice.code-focus .guidegrid {grid-template-columns:minmax(0,1fr);gap:20px;align-items:start}
+body #cpractice.code-focus .c-workspace-example {display:none}
 body #cpractice.code-focus .c-editor-window {min-width:0}
-body #cpractice.code-focus #unitEditor {height:clamp(250px,46vh,620px)!important;min-height:250px!important}
+body #cpractice.code-focus #unitEditor {height:var(--c-workspace-editor-height,60vh)!important;min-height:240px!important}
 body #cpractice.code-focus #practiceCode {max-height:clamp(250px,46vh,620px);white-space:pre}
 body #cpractice.code-focus .reference-toolbar {margin-top:10px}
 body #cpractice.code-focus .c-workspace-example > h3 {margin-bottom:8px}
@@ -5151,7 +5151,7 @@ body #cpractice.code-focus :is(.task-spec,.c-task-bank,.c-workspace-example,#cCo
   body #cpractice.code-focus > .card {padding:14px!important}
   body #cpractice.code-focus .c-workspace-header {margin:-14px -14px 14px;padding:11px 14px}
   body #cpractice.code-focus .guidegrid {grid-template-columns:minmax(0,1fr)}
-  body #cpractice.code-focus #unitEditor {height:38vh!important;min-height:220px!important}
+  body #cpractice.code-focus #unitEditor {height:var(--c-workspace-editor-height,50vh)!important;min-height:240px!important}
   body #cpractice.code-focus #practiceCode {max-height:45vh}
   .c-workspace-select-label {flex-basis:100%}
   .c-workspace-select {flex-basis:100%;min-width:0;font-size:14px}
@@ -5197,7 +5197,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const title = element('h2', '');
   title.id = 'cWorkspaceTitle';
   heading.append(context, title);
-  const closeButton = button('收起 ×', close, 'cWorkspaceClose');
+  const closeButton = button('退出 ×', close, 'cWorkspaceClose');
   closeButton.setAttribute('aria-label', '关闭练习子窗口');
   header.append(heading, closeButton);
 
@@ -5214,21 +5214,18 @@ document.addEventListener('DOMContentLoaded', () => {
   select.onchange = () => choose(select.selectedIndex);
   const previous = button('上一题', () => choose(sourceSelect.selectedIndex - 1), 'cWorkspacePrevious');
   const next = button('下一题', () => choose(sourceSelect.selectedIndex + 1), 'cWorkspaceNext');
-  const resources = button('题库资料', () => {
-    const shown = section.classList.toggle('show-task-bank');
-    resources.setAttribute('aria-expanded', String(shown));
-    if (shown) taskBank.scrollIntoView({block:'start',behavior:'smooth'});
-  }, 'cWorkspaceResourcesToggle');
-  resources.setAttribute('aria-controls', taskBank.id);
-  resources.setAttribute('aria-expanded', 'false');
-  const example = button('C 实例', () => {
+  const example = button('退出对答案', () => {
+    close();
     reference.open = true;
-    reference.parentElement.scrollIntoView({block:'start',behavior:'smooth'});
+    requestAnimationFrame(() => {
+      reference.parentElement.scrollIntoView({block:'start',behavior:'smooth'});
+      reference.querySelector('summary').focus({preventScroll:true});
+    });
   }, 'cWorkspaceExample');
   const output = button('编译输出', () => get('cCompilePanel').scrollIntoView({
     block:'start',behavior:'smooth'
   }), 'cWorkspaceOutput');
-  navigation.append(selectLabel, select, previous, next, resources, example, output);
+  navigation.append(selectLabel, select, previous, next, example, output);
   header.append(navigation);
   card.prepend(header);
 
@@ -5277,8 +5274,27 @@ document.addEventListener('DOMContentLoaded', () => {
     if (isOpen()) {
       reference.open = true;
       section.scrollTop = 0;
+      resizeEditor();
     }
   }
+
+  let resizeFrame = 0;
+  function resizeEditor() {
+    if (!isOpen() || resizeFrame) return;
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = 0;
+      if (!isOpen()) return;
+      const host = editor.closest('.c-editor-window');
+      const top = host.getBoundingClientRect().top - section.getBoundingClientRect().top + section.scrollTop;
+      const controlsHeight = get('unitCheck').parentElement.getBoundingClientRect().height;
+      const statusHeight = card.querySelector('.c-editor-status').getBoundingClientRect().height;
+      const visibleHeight = Math.min(section.clientHeight,
+        window.visualViewport?.height || section.clientHeight);
+      const height = Math.max(240, Math.floor(visibleHeight - top - controlsHeight - statusHeight - 36));
+      section.style.setProperty('--c-workspace-editor-height', height + 'px');
+    });
+  }
+
   function isolateBackground() {
     let current = section;
     while (current.parentElement) {
@@ -5297,8 +5313,6 @@ document.addEventListener('DOMContentLoaded', () => {
     savedOverflow = document.body.style.overflow;
     savedScroll = {x:window.scrollX,y:window.scrollY};
     section.classList.add('code-focus');
-    section.classList.remove('show-task-bank');
-    resources.setAttribute('aria-expanded', 'false');
     section.setAttribute('role','dialog');
     section.setAttribute('aria-modal','true');
     section.setAttribute('aria-labelledby',title.id);
@@ -5314,7 +5328,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function close() {
     if (!isOpen()) return;
     editor.blur();
-    section.classList.remove('code-focus','show-task-bank');
+    section.classList.remove('code-focus');
+    section.style.removeProperty('--c-workspace-editor-height');
     section.removeAttribute('role');
     section.removeAttribute('aria-modal');
     section.removeAttribute('aria-labelledby');
@@ -5330,10 +5345,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (section.classList.contains('active')) target.focus({preventScroll:true});
   }
 
-  editor.addEventListener('focus', () => open({keepEditorFocus:true}));
-  document.addEventListener('change', event => {
-    if (event.target === sourceSelect) open();
-  });
+  const editorSizeObserver = new ResizeObserver(resizeEditor);
+  editorSizeObserver.observe(section);
+  editorSizeObserver.observe(header);
+  editorSizeObserver.observe(card.querySelector('.task-spec'));
+  window.addEventListener('resize', resizeEditor);
+  window.visualViewport?.addEventListener('resize', resizeEditor);
+  editor.addEventListener('click', () => open({keepEditorFocus:true}));
+
   window.addEventListener('ds-code-task-change', syncWindow);
   new MutationObserver(() => {
     // Completion markers may update the original options after a test run.
